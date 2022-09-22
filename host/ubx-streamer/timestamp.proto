@@ -1,0 +1,6 @@
+syntax = "proto2";
+
+message timepoint {
+    required int32 iTOW = 1;
+}
+

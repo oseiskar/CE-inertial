@@ -1,0 +1,24 @@
+(kicad_sch (version 20211123) (generator eeschema)
+
+  (uuid 4498de84-184b-4466-b3d7-cde1d7bc9519)
+
+  (paper "A4")
+
+  (title_block
+    (title "Wiznet W5500 Ethernet Controller")
+    (date "2022-06-27")
+    (rev "A")
+    (company "Tampere University")
+    (comment 1 "Christian Kaarre")
+  )
+
+  (lib_symbols
+  )
+
+
+  (text "Check W5500-Pico-EVB GitHub \n(github.com/Wiznet/Hardware-Files-of-WIZnet) \nfor W5500 schematic "
+    (at 63.5 110.49 0)
+    (effects (font (size 5 5) italic) (justify left bottom))
+    (uuid 2479598b-f765-4e93-99f0-bf5d2bd1d44b)
+  )
+)
