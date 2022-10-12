@@ -1,6 +1,6 @@
 #include "pico/stdlib.h"
 
-#include <test.h>
+//#include <test.h>
 #include <scha63x-runner.h>
 
 int main() 
@@ -9,7 +9,7 @@ int main()
      
     sleep_ms(1000);
     
-    func();
+    // func();
     scha63x_runner();
     const uint LED_PIN = PICO_DEFAULT_LED_PIN;
     gpio_init(LED_PIN);
