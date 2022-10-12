@@ -1,4 +1,5 @@
 #include "scha63x_spi.h"
+#include <stdio.h>
 
 /*!
     @file scha63x_spi.cpp
@@ -15,11 +16,11 @@ const uint32_t transfer_rate = 100 * 1000;
 /*!
     \brief 
 */
-#define PIN_MISO    12
+#define PIN_MISO    8
 #define PIN_SCK     10
 #define PIN_MOSI    11
-#define PIN_CS_UNO  9
-#define PIN_CS_DUE  13
+#define PIN_CS_UNO  5
+#define PIN_CS_DUE  9
 
 #define SPI_PORT spi1
 ///@}
@@ -47,7 +48,9 @@ void spi_initialize(void)
     spi_cpol_t b = {1}; 
     spi_order_t c = {1}; 
 
-    spi_init(SPI_PORT, transfer_rate);
+    const int actual_rate = spi_init(SPI_PORT, transfer_rate);
+    printf("spi_init return: %d baud\n", actual_rate);
+
     spi_set_format(SPI_PORT, 8, a, b, c);
 
     gpio_set_function(PIN_MISO, GPIO_FUNC_SPI);
@@ -55,7 +58,7 @@ void spi_initialize(void)
     gpio_set_function(PIN_MOSI, GPIO_FUNC_SPI);
     
     // Make the SPI pins available to picotool
-    // bi_decl(bi_3pins_with_func(PIN_MISO, PIN_MOSI, PIN_SCK, GPIO_FUNC_SPI));
+    bi_decl(bi_3pins_with_func(PIN_MISO, PIN_MOSI, PIN_SCK, GPIO_FUNC_SPI));
 
     // Chip select is active-low, so we'll initialise it to a driven-high state
     gpio_init(PIN_CS_DUE);
@@ -65,9 +68,9 @@ void spi_initialize(void)
     gpio_put(PIN_CS_DUE, 1);
     gpio_put(PIN_CS_UNO, 1);
 
-    // // Make the CS pin available to picotool
-    // bi_decl(bi_1pin_with_name(PIN_CS_DUE, "SPI CS0"));
-    // bi_decl(bi_1pin_with_name(PIN_CS_UNO, "SPI CS1"));
+    // Make the CS pin available to picotool
+    bi_decl(bi_1pin_with_name(PIN_CS_DUE, "SPI CS0"));
+    bi_decl(bi_1pin_with_name(PIN_CS_UNO, "SPI CS1"));
 }
 
 /*!
@@ -105,8 +108,7 @@ static uint32_t SPI_ASIC( uint32_t data, int asic_number)
     // printf("%d\n", ui2);
     // printf("%d\n", ui3);
     // printf("%d\n", ui4);
-    printf("%zu\n", data);
-    printf("%zu\n\n", output_spi);
+    printf("SPI_ASIC debug: %08x -> %08x\n", data, output_spi);
 
     return output_spi;
 }
