@@ -16,9 +16,10 @@
 #define SCHA63X_OK                         0
 #define SCHA63X_ERR_TEST_MODE_ACTIVATION   -1 // error, Could not activate test mode during init
 #define SCHA63X_ERR_RS_STATUS_NOK          -2 // error, RS status not OK after all init steps
+#define SCHA63X_ERR_SYS_TEST               -3 // sys_test register r/w test failed
+#define SCHA63X_ERR_CRC_FAIL               -4
 
 int  initialize_sensor(char *serial_num, scha63x_sensor_config *config);
-int  scha63x_init(char *serial_num);
 
 scha63x_cacv* get_cacv_ptr(void);
 

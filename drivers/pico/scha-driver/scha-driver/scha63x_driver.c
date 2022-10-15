@@ -38,19 +38,51 @@ static scha63x_cacv scha63x_cac_values; // Cross-axis compensation values
 
 // Sensor initialization
 
-/*!
-    \brief Wrapper for scha63x_init() 
-    
-    Includes generate_filter_frames for filter manipulation
+static bool do_sys_check(uint8_t is_uno) {
+    int pin = is_uno;
+    uint32_t test_data = 0xffff;
+    SPI_ASIC_SELECT(generate_sys_test_write(test_data), pin);
+    uint16_t ret_data_prev = SPI_ASIC_SELECT(SPI_FRAME_READ_SYS_TEST, pin);
+    uint16_t ret_data_new = SPI_DATA_UINT16(SPI_ASIC_SELECT(SPI_FRAME_READ_SYS_TEST, pin));
+    uint16_t ret_data = ret_data_new; // ???
+    if (test_data != ret_data) {
+        printf("sys_test %s failed %02x != %02x\n", pin ? "UNO" : "DUE", test_data, ret_data);
+        return false;
+    }
+    return true;
+}
 
-    \param serial_num pointer to a buffer for storing IMU's serial number
-    \param config filter configuration for sensor
-    \return sensor status after initialization, check header file for definitions
-*/
-int initialize_sensor(char *serial_num, scha63x_sensor_config *config)
-{   
-    generate_filter_frames(config);
-    return scha63x_init(serial_num);
+static void read_common_status(uint8_t is_uno) {
+    int pin = is_uno;
+    SPI_ASIC_SELECT(SPI_FRAME_READ_COMMON_STATUS_1, pin);
+    uint16_t common_status1 = SPI_DATA_UINT16(SPI_ASIC_SELECT(SPI_FRAME_READ_COMMON_STATUS_1, pin));
+    SPI_ASIC_SELECT(SPI_FRAME_READ_COMMON_STATUS_2, pin);
+    uint16_t common_status2 = SPI_DATA_UINT16(SPI_ASIC_SELECT(SPI_FRAME_READ_COMMON_STATUS_2, pin));
+}
+
+static int get_startup_wait_for_filter(int filter) {
+    const int low_wait = 405;
+    const int high_wait = 525;
+    switch (filter) {
+        case FILTER_13HZ: return low_wait;
+        case FILTER_20HZ: return low_wait;
+        default: return high_wait;
+    }
+}
+
+static void reset_asics(bool reset_uno, bool reset_due) {
+//#define RESET_USING_GPIO
+#ifdef RESET_USING_GPIO
+    reset_ext_gpio(reset_uno, reset_due);
+#else
+    if (reset_uno) {
+        SPI_ASIC_UNO(SPI_FRAME_WRITE_RESET);
+    }
+    if (reset_due) {
+        SPI_ASIC_DUE(SPI_FRAME_WRITE_REG_BANK_0); // Make sure we are in bank 0, otherwise SPI reset is not available.
+        SPI_ASIC_DUE(SPI_FRAME_WRITE_RESET);
+    }
+#endif
 }
 
 // Should be removed
@@ -67,21 +99,35 @@ void Wait_ms(int i)
     
     \param serial_num pointer to a buffer for storing IMU's serial number
 */
-int scha63x_init(char *serial_num)
+int initialize_sensor(char *serial_num, scha63x_sensor_config *config)
 {
     bool status_DUE = false;
     bool status_UNO = false;
     int attempt;
     int const num_attempts = 5;
 
-    // HW Reset (reset via SPI)
-    SPI_ASIC_UNO(SPI_FRAME_WRITE_RESET);
-    SPI_ASIC_DUE(SPI_FRAME_WRITE_REG_BANK_0); // Make sure we are in bank 0, otherwise SPI reset is not available.
-    SPI_ASIC_DUE(SPI_FRAME_WRITE_RESET);
+    serial_num[0] = '\0';
+
+//#define INIT_DEBUG(...) (void)0
+#define INIT_DEBUG printf
+
+//#define DO_SYS_CHECK
+#define READ_SERIAL_NUMBER
+#define READ_CAC
+
+    // HW Reset
+    reset_asics(true, true);
 
     // Wait 25 ms for the non-volatile memory (NVM) Read
     Wait_ms(25);
 
+    // DUE asic initial startup
+    SPI_ASIC_DUE(SPI_FRAME_WRITE_OP_MODE_NORMAL); // Set DUE operation mode on twice
+    SPI_ASIC_DUE(SPI_FRAME_WRITE_OP_MODE_NORMAL);
+    SPI_ASIC_UNO(SPI_FRAME_WRITE_OP_MODE_NORMAL); // Set UNO operation mode on
+    Wait_ms(70);
+
+#ifdef READ_SERIAL_NUMBER
     // Read UNO asic serial number
     SPI_ASIC_UNO(SPI_FRAME_READ_TRC_2);
     uint16_t trc_2 = SPI_DATA_UINT16(SPI_ASIC_UNO(SPI_FRAME_READ_TRC_0));
@@ -93,7 +139,10 @@ int scha63x_init(char *serial_num)
     uint16_t id_0 = trc_0 & 0xffff;
     uint16_t id_2 = trc_1 & 0xffff;
     snprintf(serial_num, 14, "%05d%01x%04X", id_2, id_1, id_0);
+    INIT_DEBUG("got serial num %s\n", serial_num);
+#endif
 
+#ifdef READ_CAC
     // Activate DUE asic test mode to be able to read cross-axis
     // compensation values from DUE NVM.
     SPI_ASIC_DUE(SPI_FRAME_WRITE_MODE_ASM_010);
@@ -103,12 +152,12 @@ int scha63x_init(char *serial_num)
     SPI_ASIC_DUE(SPI_FRAME_WRITE_MODE_ASM_100);
     SPI_ASIC_DUE(SPI_FRAME_READ_MODE);
     uint32_t resp = SPI_ASIC_DUE(SPI_FRAME_READ_MODE);
-
     // printf("%lu\n\n", (unsigned long)resp);
 
     // Check if device is correctly set to test mode
     if ((SPI_DATA_UINT16(resp) & 0x7) == 7)
     {
+        INIT_DEBUG("test mode activated\n");
 
         // Read cross-axis compensation values
         SPI_ASIC_DUE(0xFC00051A);
@@ -141,6 +190,8 @@ int scha63x_init(char *serial_num)
         scha63x_cac_values.bzx = SPI_DATA_INT8_UPPER(byz_bzx) / 4096.0;
         scha63x_cac_values.bzy = SPI_DATA_INT8_LOWER(bzy_bzz) / 4096.0;
         scha63x_cac_values.bzz = SPI_DATA_INT8_UPPER(bzy_bzz) / 4096.0 + 1;
+
+        INIT_DEBUG("cac_value.cxx %f\n", scha63x_cac_values.cxx);
     }
     else
     {
@@ -148,36 +199,42 @@ int scha63x_init(char *serial_num)
         return SCHA63X_ERR_TEST_MODE_ACTIVATION;
     }
 
-    // HW Reset to get DUE asic out from test mode (reset via SPI).
-    SPI_ASIC_DUE(SPI_FRAME_WRITE_REG_BANK_0); // Return to bank 0 to make SPI reset command available.
-    SPI_ASIC_DUE(SPI_FRAME_WRITE_RESET);      // Reset DUE after reading cross-axis registers
+    // HW Reset to get DUE asic out from test mode
+    reset_asics(true, true);
 
     // Start UNO & DUE
     Wait_ms(25); // Wait 25ms for the non-volatile memory (NVM) Read
 
     // DUE asic initial startup
-    SPI_ASIC_UNO(SPI_FRAME_WRITE_OP_MODE_NORMAL); // Set UNO operation mode on
     SPI_ASIC_DUE(SPI_FRAME_WRITE_OP_MODE_NORMAL); // Set DUE operation mode on twice
     SPI_ASIC_DUE(SPI_FRAME_WRITE_OP_MODE_NORMAL);
+    SPI_ASIC_UNO(SPI_FRAME_WRITE_OP_MODE_NORMAL); // Set UNO operation mode on
     Wait_ms(70); // Wait minimum 70ms (includes UNO 50ms 'SPI accessible' wait)
+#endif
 
-    SPI_ASIC_UNO(SPI_FRAME_WRITE_FILTER_RATE); // Select UNO 46Hz filter for RATE
-    SPI_ASIC_UNO(SPI_FRAME_WRITE_FILTER_ACC);  // Select UNO 46Hz filter for ACC
+    int filter_startup_wait = get_startup_wait_for_filter(config->acc_filter.filter);
+    uint32_t filter_gyro_uno = generate_uno_gyro_frame(config->gyro_filter);
+    uint32_t filter_gyro_due = generate_due_gyro_frame(config->gyro_filter);
+    uint32_t filter_acc = generate_acc_frame(config->acc_filter);
+
+    SPI_ASIC_UNO(filter_gyro_uno); // Select UNO filter for RATE
+    SPI_ASIC_UNO(filter_acc);  // Select UNO filter for ACC
 
     // Restart DUE
-    SPI_ASIC_DUE(SPI_FRAME_WRITE_RESET); // Reset DUE again
+    reset_asics(false, true);
     Wait_ms(25);                         // Wait 25 ms for the NVM read
 
     SPI_ASIC_DUE(SPI_FRAME_WRITE_OP_MODE_NORMAL); // Set DUE operation mode
     SPI_ASIC_DUE(SPI_FRAME_WRITE_OP_MODE_NORMAL); // DUE operation mode must be set twice
 
     Wait_ms(1);                                     // Wait 1 ms for SPI to be accesible
-    SPI_ASIC_DUE(SPI_FRAME_WRITE_FILTER_RATE); // Select DUE 46Hz filter for RATE
+    SPI_ASIC_DUE(filter_gyro_due); // Select DUE filter for RATE
 
     for (attempt = 0; attempt < num_attempts; attempt++)
     {
+        INIT_DEBUG("startup attempt %d (waiting %d ms)\n", attempt+1, filter_startup_wait);
         // Wait FILTER_STARTUP_WAIT ms (Gyro and ACC start up)
-        Wait_ms(FILTER_STARTUP_WAIT);
+        Wait_ms(filter_startup_wait);
 
         // Set EOI=1 (End of initialization command)
         SPI_ASIC_UNO(SPI_FRAME_WRITE_EOI_BIT); // Set EOI bit for UNO
@@ -187,25 +244,35 @@ int scha63x_init(char *serial_num)
         status_UNO = scha63x_check_init_uno();
         status_DUE = scha63x_check_init_due();
 
+        read_common_status(0);
+        read_common_status(1);
+
+        INIT_DEBUG("uno:%s, due:%s\n", status_UNO ? "OK" : "FAIL", status_DUE ? "OK" : "FAIL");
+
         // Check if restart is needed
         if ((status_UNO == false || status_DUE == false) && attempt < (num_attempts - 1))
         {
-
-            SPI_ASIC_UNO(SPI_FRAME_WRITE_RESET);
-            SPI_ASIC_DUE(SPI_FRAME_WRITE_RESET);
+            reset_asics(true, true);
 
             Wait_ms(25);                                  // Wait 25 ms for the NVM read
             SPI_ASIC_UNO(SPI_FRAME_WRITE_OP_MODE_NORMAL); // Set UNO operation mode on
             SPI_ASIC_DUE(SPI_FRAME_WRITE_OP_MODE_NORMAL); // Set DUE operation mode on twice
             SPI_ASIC_DUE(SPI_FRAME_WRITE_OP_MODE_NORMAL);
             Wait_ms(50);                                    // Wait 50ms before communicating with UNO
-            SPI_ASIC_UNO(SPI_FRAME_WRITE_FILTER_RATE); // Select UNO 46Hz filter for RATE
-            SPI_ASIC_UNO(SPI_FRAME_WRITE_FILTER_ACC);  // Select UNO 46Hz filter for ACC
-            SPI_ASIC_DUE(SPI_FRAME_WRITE_FILTER_RATE); // Select DUE 46Hz filter for RATE
-            Wait_ms(45);                                    // Adjust restart duration to 500 ms
+            SPI_ASIC_UNO(filter_gyro_uno); // Select UNO filter for RATE
+            SPI_ASIC_UNO(filter_acc);  // Select UNO filter for ACC
+            SPI_ASIC_DUE(filter_gyro_due); // Select DUE filter for RATE
+            Wait_ms(45);                                    
+            // Adjust restart duration to 500 ms
+
+            filter_startup_wait = 500; //???
         }
         else
         {
+#ifdef DO_SYS_CHECK
+            if (!do_sys_check(0)) return SCHA63X_ERR_SYS_TEST;
+            if (!do_sys_check(1)) return SCHA63X_ERR_SYS_TEST;
+#endif
             break;
         }
     }
@@ -228,6 +295,21 @@ scha63x_cacv *get_cacv_ptr(void)
     return &scha63x_cac_values;
 }
 
+static bool scha63x_check_init(uint8_t is_uno) {
+    uint32_t resp;
+    bool ok;
+
+    // Read summary status two times (first time may show incorrectly FAIL after start-up)
+    for (int i=0; i<2; ++i) {
+        if (i > 0) Wait_ms(3);
+        SPI_ASIC_SELECT(SPI_FRAME_READ_SUMMARY_STATUS, is_uno);
+        resp = SPI_ASIC_SELECT(SPI_FRAME_READ_SUMMARY_STATUS, is_uno);
+    }
+    ok = SPI_DATA_CHECK_RS_ERROR(resp) == true ? false : true;
+
+    return ok;
+}
+
 /*!
     \brief Check initialization success of SCHA63X sensor DUE asic
 
@@ -235,17 +317,7 @@ scha63x_cacv *get_cacv_ptr(void)
 */
 static bool scha63x_check_init_due(void)
 {
-    uint32_t resp;
-    bool due_ok;
-
-    // Read summary status two times (first time may show incorrectly FAIL after start-up)
-    SPI_ASIC_DUE(SPI_FRAME_READ_SUMMARY_STATUS);
-    SPI_ASIC_DUE(SPI_FRAME_READ_SUMMARY_STATUS);
-    Wait_ms(3);
-    resp = SPI_ASIC_DUE(SPI_FRAME_READ_SUMMARY_STATUS);
-    due_ok = SPI_DATA_CHECK_RS_ERROR(resp) == true ? false : true;
-
-    return due_ok;
+    return scha63x_check_init(0);
 }
 
 /*!
@@ -255,17 +327,7 @@ static bool scha63x_check_init_due(void)
 */
 static bool scha63x_check_init_uno(void)
 {
-    uint32_t resp;
-    bool uno_ok;
-
-    // Read summary status two times (first time may show incorrectly FAIL after start-up)
-    SPI_ASIC_UNO(SPI_FRAME_READ_SUMMARY_STATUS);
-    SPI_ASIC_UNO(SPI_FRAME_READ_SUMMARY_STATUS);
-    Wait_ms(3);
-    resp = SPI_ASIC_UNO(SPI_FRAME_READ_SUMMARY_STATUS);
-    uno_ok = SPI_DATA_CHECK_RS_ERROR(resp) == true ? false : true;
-
-    return uno_ok;
+    return scha63x_check_init(1);
 }
 
 

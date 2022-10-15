@@ -64,28 +64,19 @@ typedef struct _scha63x_sensor_status {
     uint16_t common_status2;
             
 } scha63x_sensor_status;
-
-/*! 
-    \brief Sensor filter configurations for gyro and acc
-*/
-typedef struct scha_filters {
     
-	const uint8_t FILTER_13HZ;
-    const uint8_t FILTER_20HZ;
-    const uint8_t FILTER_46HZ;
-    const uint8_t FILTER_200HZ;
-    const uint8_t FILTER_300HZ;
-            
-} scha_filters;
+#define FILTER_13HZ 0b000
+#define FILTER_20HZ 0b001
+#define FILTER_46HZ 0b010
+#define FILTER_200HZ 0b011
+#define FILTER_300HZ 0b100
 
 /*! 
     \brief Sensor filter configuration for accelerometer
 */
 typedef struct _acc_conf  {
-    
-	uint16_t Ax;
-    uint16_t Ay;
-    uint16_t Az;
+
+	uint16_t filter;
             
 } _acc_conf;
 
@@ -94,10 +85,7 @@ typedef struct _acc_conf  {
 */
 typedef struct _gyro_conf {
     
-	uint16_t Rz2_Rx2;
-    uint16_t Rz_Rx;
-    uint16_t Ry2;
-    uint16_t Ry;
+	uint16_t filter;
             
 } _gyro_conf;
 

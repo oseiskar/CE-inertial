@@ -1,12 +1,12 @@
 add_library(
     scha6xx
-    scha63x-runner.cpp
+    scha63x-runner.c
     scha63x-runner.h
     scha63x_spi.c
     scha63x_spi.h
-    scha63x_spi_frame.cpp
+    scha63x_spi_frame.c
     scha63x_spi_frame.h
-    scha63x_driver.cpp
+    scha63x_driver.c
     scha63x_driver.h
     )
 

@@ -15,16 +15,6 @@
 /*! \brief Macro for bitshifting */
 #define shift(frame, nbit) ((frame) = (frame << (nbit)))
 
-
-/*! \brief frame variables */
-#define SPI_FRAME_WRITE_FILTER_RATE 0
-#define SPI_FRAME_WRITE_FILTER_ACC 0
-
-/*! \brief wait */
-#define FILTER_STARTUP_WAIT 405
-
-
-
 // Pre-calculated SPI frames for various operations
 
 ///@{
@@ -63,6 +53,11 @@
 ///@}
 
 
+#define SPI_REGISTER_COMMON_STATUS_1 0x14
+#define SPI_REGISTER_COMMON_STATUS_2 0x15
+#define SPI_REGISTER_SYS_TEST 0x17
+#define SPI_REGISTER_SUMMARY_STATUS 0x0E
+
 // Filter configuration
 
 ///@{
@@ -80,12 +75,16 @@
 /*! \brief accelerometer (register 1Ah) */
 #define ACC_REG  0b11010 
 
-void generate_filter_frames(scha63x_sensor_config *config);
-
-uint32_t generate_acc_frame(_acc_conf FILTER);
-uint32_t generate_gyro_frame(_gyro_conf FILTER);
+uint32_t generate_acc_frame(_acc_conf conf);
+uint32_t generate_uno_gyro_frame(_gyro_conf conf);
+uint32_t generate_due_gyro_frame(_gyro_conf conf);
 
 uint8_t CalculateCRC(uint32_t Data);
 uint8_t CRC8(uint8_t BitValue, uint8_t CRC);
+
+uint32_t generate_spi_frame(uint8_t is_write, uint8_t reg, uint16_t data);
+uint32_t generate_sys_test_write(uint16_t test_data);
+
+#define SPI_FRAME_READ_SYS_TEST generate_spi_frame(0, SPI_REGISTER_SYS_TEST, 0)
 
 #endif
